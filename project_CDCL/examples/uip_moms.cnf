@@ -1,0 +1,16 @@
+c 7-variable instance where MOMS hits a conflict whose First UIP (x4) is an
+c implied literal, not the decision (x1), and the learned unit clause (x4)
+c makes the solver backjump from level 2 to level 0, skipping level 1.
+p cnf 7 12
+-2 -5 3 0
+4 -1 6 0
+1 -2 -4 0
+4 -7 -1 0
+-5 7 0
+4 3 0
+4 5 -3 0
+-7 2 0
+2 -5 1 0
+-5 4 -3 0
+4 -1 6 0
+-2 3 -1 0

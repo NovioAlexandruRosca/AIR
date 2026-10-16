@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CDCL Visualizer</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #667085; --line: #dfe3ea;
+  --true: #1f8a4c; --true-bg: #e3f5ea; --false: #c2342b; --false-bg: #fbe6e4;
+  --unk: #6b7280; --unk-bg: #eef0f3; --decision: #2457c5; --decision-bg: #e5edfc;
+  --conflict: #d92d20; --learn: #7a3fc4; --learn-bg: #f1e8fc; --side: #f2a33a; --side-bg: #fff1dc;
+  --unit: #b7791f; --unit-bg: #fdf3dc; --focus: #f5c518;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --panel: #1b1f27; --ink: #e6e9ef; --muted: #98a2b3; --line: #2d333f;
+    --true: #4cc584; --true-bg: #173326; --false: #f07167; --false-bg: #3a1d1c;
+    --unk: #9aa3b2; --unk-bg: #262b35; --decision: #79a0ff; --decision-bg: #1d2a47;
+    --conflict: #ff6b5e; --learn: #b68cf0; --learn-bg: #2c2140; --side: #f5b552; --side-bg: #3b2d16;
+    --unit: #e3b04b; --unit-bg: #3a2f17; --focus: #f5c518;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding: 12px 16px 4px; }
+header h1 { font-size: 18px; margin: 0; }
+header .sub { color: var(--muted); font-size: 13px; }
+.wrap { padding: 8px 16px 24px; display: grid; gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.panel h2 .grow { flex: 1; }
+button, select, input[type=file]::file-selector-button {
+  font: inherit; color: var(--ink); background: var(--unk-bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--decision); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--decision); color: #fff; border-color: var(--decision); }
+textarea { width: 100%; min-height: 120px; resize: vertical; font: 12.5px/1.4 ui-monospace, Consolas, monospace;
+  background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.msg { font-size: 13px; color: var(--muted); }
+.msg.err { color: var(--false); }
+#inputPanel details > summary { cursor: pointer; font-weight: 600; }
+#inputPanel .grid2 { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+
+#controls { position: sticky; top: 0; z-index: 5; }
+#controls .row { gap: 6px; }
+#scrub { flex: 1; min-width: 140px; }
+#stepLabel { font-variant-numeric: tabular-nums; min-width: 120px; text-align: right; color: var(--muted); }
+.kbd { font-size: 12px; color: var(--muted); }
+
+#explain .headline { font-size: 16px; font-weight: 600; }
+#explain .detail { margin-top: 6px; color: var(--ink); }
+#explain table { border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+#explain th, #explain td { padding: 2px 10px; border-bottom: 1px solid var(--line); text-align: right; }
+#explain th:first-child, #explain td:first-child { text-align: left; }
+#explain tr.chosen td { background: var(--decision-bg); font-weight: 600; }
+.steps { margin: 6px 0 0; padding-left: 20px; }
+.steps li { margin: 2px 0; }
+.steps li.cur { font-weight: 600; }
+
+.main { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 1100px) {
+  .main { grid-template-columns: minmax(300px, 1fr) minmax(420px, 2fr); }
+  .main .graph { grid-column: 2; grid-row: 1 / span 2; }
+}
+.scroll { overflow: auto; max-height: 360px; }
+.graph .scroll { max-height: 640px; }
+
+.lit { display: inline-block; padding: 0 6px; margin: 1px 2px; border-radius: 4px; font: 12.5px/1.6 ui-monospace, Consolas, monospace;
+  border: 1px solid transparent; white-space: nowrap; }
+.lit.t { color: var(--true); background: var(--true-bg); }
+.lit.f { color: var(--false); background: var(--false-bg); text-decoration: line-through; }
+.lit.u { color: var(--unk); background: var(--unk-bg); }
+.lit.d { border-color: var(--decision); color: var(--decision); background: var(--decision-bg); text-decoration: none; font-weight: 700; }
+.lit.now { outline: 2px solid var(--focus); }
+.lit sub { font-size: 10px; color: var(--muted); margin-left: 2px; }
+
+.clause { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 6px; border-left: 4px solid transparent; }
+.clause .name { width: 38px; color: var(--muted); font: 12px ui-monospace, Consolas, monospace; flex: none; }
+.clause .lits { flex: 1; min-width: 0; }
+.clause .tag { font-size: 11px; color: var(--muted); flex: none; }
+.clause.sat { opacity: .55; border-left-color: var(--true); }
+.clause.unit { border-left-color: var(--unit); background: var(--unit-bg); }
+.clause.conf { border-left-color: var(--conflict); background: var(--false-bg); }
+.clause.open { border-left-color: var(--line); }
+.clause.new { border-left-color: var(--learn); background: var(--learn-bg); }
+.clause.focus { outline: 2px solid var(--focus); opacity: 1; }
+.clause.learnt .name { color: var(--learn); font-weight: 700; }
+.group { margin: 8px 0 4px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.group.learnt { color: var(--learn); }
+
+.lvl { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+.lvl .lname { width: 34px; flex: none; color: var(--muted); font: 12px ui-monospace, Consolas, monospace; padding-top: 2px; }
+.lvl.cur .lname { color: var(--decision); font-weight: 700; }
+
+#log ol { margin: 0; padding-left: 44px; font-size: 13px; }
+#log li { padding: 1px 4px; border-radius: 4px; cursor: pointer; }
+#log li:hover { background: var(--unk-bg); }
+#log li.cur { background: var(--decision-bg); font-weight: 600; }
+#log li.future { color: var(--muted); opacity: .6; }
+#log li.k-Conflict { color: var(--conflict); }
+#log li.k-Learn { color: var(--learn); }
+#log li.k-Backjump { color: var(--side); }
+
+svg text { font: 12px ui-monospace, Consolas, monospace; fill: var(--ink); }
+svg .elabel { font-size: 10px; fill: var(--muted); }
+svg .rowlabel { fill: var(--muted); font-weight: 700; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px;
+  vertical-align: -1px; background: var(--c); border: 1px solid var(--b, var(--c)); }
+.badge { padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; }
+.badge.SAT { background: var(--true-bg); color: var(--true); }
+.badge.UNSAT { background: var(--false-bg); color: var(--false); }
+.badge.UNKNOWN { background: var(--unit-bg); color: var(--unit); }
+.empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CDCL Visualizer</h1>
+  <span class="sub">DPLL + clause learning (First-UIP) + backjumping, decisions by MOMS</span>
+  <span id="summary" class="sub"></span>
+  <span id="perf" class="sub" title="'solver' is a separate run without tracing (the solver's real speed); 'with tracing' is the run that recorded the steps. Rates on tiny formulas are dominated by timer noise."></span>
+</header>
+
+<div class="wrap">
+  <section class="panel" id="inputPanel">
+    <details id="inputDetails" open>
+      <summary>Formula input</summary>
+      <div class="grid2">
+        <div class="row">
+          <label>Example
+            <select id="exampleSel">
+              <option value="spec">Spec example (5 vars)</option>
+              <option value="uip">First UIP ≠ decision, backjump 2 → 0</option>
+              <option value="backjump">Non-chronological backjump</option>
+              <option value="php">Pigeonhole PHP(3,2) — UNSAT</option>
+              <option value="unsat">All 8 clauses on 3 vars — UNSAT</option>
+            </select>
+          </label>
+          <label>Open .cnf <input type="file" id="cnfFile" accept=".cnf,.txt,.dimacs"></label>
+          <label>Open trace .json <input type="file" id="traceFile" accept=".json"></label>
+        </div>
+        <textarea id="cnfText" spellcheck="false"></textarea>
+        <div class="row">
+          <button class="primary" id="solveBtn">Solve &amp; visualize</button>
+          <span id="inputMsg" class="msg"></span>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section class="panel" id="controls">
+    <div class="row">
+      <button id="bStart" title="Start (Home)">⏮</button>
+      <button id="bPrevC" title="Previous conflict (Shift+←)">⇤ conflict</button>
+      <button id="bPrev" title="Step back (←)">◀ back</button>
+      <button id="bPlay" title="Play / pause (Space)">▶ play</button>
+      <button id="bNext" title="Step forward (→)">next ▶</button>
+      <button id="bNextC" title="Next conflict (Shift+→)">conflict ⇥</button>
+      <button id="bEnd" title="End (End)">⏭</button>
+      <select id="speed" title="Playback speed">
+        <option value="1200">slow</option><option value="600" selected>normal</option>
+        <option value="200">fast</option><option value="40">very fast</option>
+      </select>
+      <input type="range" id="scrub" min="0" max="0" value="0">
+      <span id="stepLabel">no trace</span>
+    </div>
+  </section>
+
+  <section class="panel" id="explain">
+    <div class="headline" id="headline">Pick an example or paste a CNF formula, then press “Solve &amp; visualize”.</div>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <div class="main">
+    <section class="panel">
+      <h2>Formula <span class="grow"></span>
+        <label style="text-transform:none;letter-spacing:0;font-weight:400"><input type="checkbox" id="hideSat"> hide satisfied</label></h2>
+      <div class="scroll" id="formula"><div class="empty">No formula loaded.</div></div>
+      <div class="legend">
+        <span style="--c:var(--true)">satisfied</span><span style="--c:var(--unit)">unit</span>
+        <span style="--c:var(--conflict)">conflicting</span><span style="--c:var(--line)">open</span>
+      </div>
+    </section>
+
+    <section class="panel graph">
+      <h2>Implication graph <span class="grow"></span><span id="graphNote" style="text-transform:none;letter-spacing:0"></span></h2>
+      <div class="scroll" id="graph"><div class="empty">Nothing assigned yet.</div></div>
+      <div class="legend">
+        <span style="--c:var(--decision-bg);--b:var(--decision)">decision</span>
+        <span style="--c:var(--panel);--b:var(--muted)">implied</span>
+        <span style="--c:var(--false-bg);--b:var(--conflict)">κ conflict</span>
+        <span style="--c:var(--side-bg);--b:var(--side)">conflict side (resolved)</span>
+        <span style="--c:var(--learn-bg);--b:var(--learn)">First UIP</span>
+        <span style="--c:var(--conflict)">- - cut edges = current resolvent</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Trail (assignment stack)</h2>
+      <div class="scroll" id="trail"><div class="empty">Empty.</div></div>
+    </section>
+  </div>
+
+  <section class="panel" id="log">
+    <h2>Event log <span class="grow"></span><span class="kbd">← → step · Shift+← → conflicts · Space play · Home/End</span></h2>
+    <div class="scroll" id="logList" style="max-height:260px"><div class="empty">No events.</div></div>
+  </section>
+</div>
+
+<script type="text/plain" id="ex-spec">c This is a comment line (starts with 'c')
+c Another comment
+p cnf 5 3
+1 -5 4 0
+-1 5 3 4 0
+-3 -4 0
+</script>
+<script type="text/plain" id="ex-uip">c 7-variable instance where MOMS hits a conflict whose First UIP (x4) is an
+c implied literal, not the decision (x1), and the learned unit clause (x4)
+c makes the solver backjump from level 2 to level 0, skipping level 1.
+p cnf 7 12
+-2 -5 3 0
+4 -1 6 0
+1 -2 -4 0
+4 -7 -1 0
+-5 7 0
+4 3 0
+4 5 -3 0
+-7 2 0
+2 -5 1 0
+-5 4 -3 0
+4 -1 6 0
+-2 3 -1 0
+</script>
+<script type="text/plain" id="ex-backjump">c Random 9-variable instance chosen because MOMS leads to a
+c non-chronological backjump from level 3 straight to level 0.
+p cnf 9 30
+-1 -9 -7 0
+-9 -7 0
+-1 7 -8 0
+-8 1 6 0
+9 -2 0
+8 7 -3 0
+-1 6 0
+3 7 0
+1 -3 9 0
+-7 8 -1 0
+-5 -4 2 0
+8 -3 -7 0
+2 -6 -4 0
+7 -5 -8 0
+-9 -1 0
+9 -2 0
+-9 3 0
+-7 1 -6 0
+-8 -7 0
+4 -1 -5 0
+6 4 2 0
+-8 7 -3 0
+-5 -8 6 0
+-1 6 0
+7 3 6 0
+-8 -7 3 0
+6 -8 -1 0
+-7 4 6 0
+-8 3 0
+-5 -8 0
+</script>
+<script type="text/plain" id="ex-php">c Pigeonhole PHP(3,2): 3 pigeons, 2 holes -> UNSATISFIABLE.
+c x1,x2 = pigeon 1 in hole 1/2; x3,x4 = pigeon 2; x5,x6 = pigeon 3.
+p cnf 6 9
+1 2 0
+3 4 0
+5 6 0
+-1 -3 0
+-1 -5 0
+-3 -5 0
+-2 -4 0
+-2 -6 0
+-4 -6 0
+</script>
+<script type="text/plain" id="ex-unsat">c All 8 clauses over x1,x2,x3: UNSATISFIABLE.
+p cnf 3 8
+1 2 3 0
+1 2 -3 0
+1 -2 3 0
+1 -2 -3 0
+-1 2 3 0
+-1 2 -3 0
+-1 -2 3 0
+-1 -2 -3 0
+</script>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const CHECKPOINT_EVERY = 250;
+const MAX_GRAPH_NODES = 160;
+const MAX_CLAUSE_ROWS = 600;
+const LOG_WINDOW = 200;
+
+let T = null;            // loaded trace
+let clauses = [];        // id -> {id, lits, learnt, name}
+let checkpoints = [];    // checkpoints[i] = state after i*CHECKPOINT_EVERY events
+let cur = null, step = 0, timer = null;
+
+// ------------------------------------------------------------ formatting
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const vname = (v) => `x${v}`;
+const fmtLit = (l) => (l > 0 ? `x${l}` : `¬x${-l}`);
+const fmtClause = (lits) => (lits.length ? "(" + lits.map(fmtLit).join(" ∨ ") + ")" : "□ (empty clause)");
+const fmtAssign = (l) => `${vname(Math.abs(l))} = ${l > 0 ? "true" : "false"}`;
+const cname = (id) => (clauses[id] ? clauses[id].name : `#${id}`);
+
+// ------------------------------------------------------------ state + replay
+function initState() {
+  const n = T.num_vars + 1;
+  return {
+    val: new Array(n).fill(0),     // 1 true, -1 false, 0 unassigned
+    lvl: new Array(n).fill(-1),
+    reason: new Array(n).fill(-1), // -1 = decision / unassigned
+    trail: [],                     // DIMACS literals in assignment order
+    level: 0, nLearned: 0, conflict: -1, analysis: null, result: null,
+  };
+}
+
+function cloneState(s) {
+  return {
+    ...s, val: s.val.slice(), lvl: s.lvl.slice(), reason: s.reason.slice(), trail: s.trail.slice(),
+    analysis: s.analysis && { ...s.analysis, steps: s.analysis.steps.slice(), side: s.analysis.side.slice() },
+  };
+}
+
+function assign(s, lit, level, reason) {
+  const v = Math.abs(lit);
+  s.val[v] = lit > 0 ? 1 : -1; s.lvl[v] = level; s.reason[v] = reason; s.trail.push(lit);
+}
+
+function apply(s, ev) {
+  switch (ev.type) {
+    case "Decide": s.level = ev.level; s.conflict = -1; s.analysis = null; assign(s, ev.lit, ev.level, -1); break;
+    case "Propagate": assign(s, ev.lit, ev.level, ev.reason); break;
+    case "Conflict": s.conflict = ev.clause; s.analysis = { steps: [], side: [], learn: null }; break;
+    case "Resolve": s.analysis.steps.push(ev); s.analysis.side.push(ev.pivot); break;
+    case "Learn": s.nLearned++; s.analysis.learn = ev; break;
+    case "Backjump":
+      for (const l of ev.unassigned) { const v = Math.abs(l); s.val[v] = 0; s.lvl[v] = -1; s.reason[v] = -1; }
+      s.trail.length -= ev.unassigned.length; s.level = ev.to; s.conflict = -1; s.analysis = null; break;
+    case "Result": s.result = ev; break;
+  }
+}
+
+// State after `k` events, rebuilt from the nearest checkpoint (deterministic,
+// so stepping back always reproduces exactly the state seen going forward).
+function stateAt(k) {
+  const ci = Math.floor(k / CHECKPOINT_EVERY);
+  while (checkpoints.length <= ci) {
+    const i = checkpoints.length - 1;
+    const s = cloneState(checkpoints[i]);
+    for (let e = i * CHECKPOINT_EVERY; e < (i + 1) * CHECKPOINT_EVERY; e++) apply(s, T.events[e]);
+    checkpoints.push(s);
+  }
+  const s = cloneState(checkpoints[ci]);
+  for (let e = ci * CHECKPOINT_EVERY; e < k; e++) apply(s, T.events[e]);
+  return s;
+}
+
+function goto(k) {
+  if (!T) return;
+  k = Math.max(0, Math.min(T.events.length, k));
+  if (k === step + 1 && cur) apply(cur, T.events[step]);
+  else if (k !== step || !cur) cur = stateAt(k);
+  step = k;
+  render();
+}
+
+// ------------------------------------------------------------ loading
+function loadTrace(trace) {
+  stop();
+  T = trace;
+  clauses = T.clauses.map((lits, i) => ({ id: i, lits, learnt: false, name: `C${i + 1}` }));
+  for (const ev of T.events)
+    if (ev.type === "Learn") clauses[ev.clause] = { id: ev.clause, lits: ev.lits, learnt: true, name: `L${ev.clause - T.num_original + 1}` };
+  checkpoints = [initState()];
+  cur = null; step = 0;
+  $("scrub").max = T.events.length;
+  const st = T.stats;
+  const warn = T.warnings.length ? ` · ⚠ ${T.warnings.map(esc).join("; ")}` : "";
+  const trunc = T.truncated ? ` · trace truncated after ${T.events.length - 1} events (final result still shown)` : "";
+  $("summary").innerHTML =
+    `<span class="badge ${T.status}">${T.status}</span> ${T.num_vars} vars, ${T.num_original} clauses · ` +
+    `${st.decisions} decisions, ${st.propagations} propagations, ${st.conflicts} conflicts, ${st.learned} learned` +
+    (T.status === "SAT" ? (T.verified ? " · model verified ✓" : " · model NOT verified") : "") + trunc + warn;
+  $("perf").innerHTML = perfText(T);
+  goto(0);
+}
+
+const fmtMs = (t) => (t < 1 ? `${(t * 1000).toFixed(0)} µs` : t < 1000 ? `${t.toFixed(2)} ms` : `${(t / 1000).toFixed(2)} s`);
+function fmtRate(count, ms) {
+  if (!count || !(ms > 0)) return null;
+  const r = count / (ms / 1000);
+  return r >= 1e6 ? `${(r / 1e6).toFixed(1)} M` : r >= 1e3 ? `${(r / 1e3).toFixed(1)} k` : r.toFixed(0);
+}
+
+// Timing line. Traces written by older builds have no "timing" field.
+function perfText(t) {
+  const tm = t.timing;
+  if (!tm) return "";
+  const pure = tm.solve_untraced_ms ?? null;
+  const base = pure ?? tm.solve_ms;   // rates use the untraced time when available
+  const parts = [];
+  if (pure !== null) parts.push(`<b>solver ${fmtMs(pure)}</b>`, `with tracing ${fmtMs(tm.solve_ms)}`);
+  else parts.push(`<b>solve ${fmtMs(tm.solve_ms)}</b> (tracing on)`);
+  parts.push(`parse ${fmtMs(tm.parse_ms)}`);
+  if (t.round_trip_ms != null) parts.push(`round trip ${fmtMs(t.round_trip_ms)}`);
+  for (const [n, label] of [[t.stats.propagations, "propagations"], [t.stats.conflicts, "conflicts"], [t.stats.decisions, "decisions"]]) {
+    const r = fmtRate(n, base);
+    if (r) parts.push(`${r} ${label}/s`);
+  }
+  return "⏱ " + parts.join(" · ");
+}
+
+async function solve() {
+  const text = $("cnfText").value;
+  const msg = $("inputMsg");
+  msg.className = "msg"; msg.textContent = "Solving…";
+  if (location.protocol === "file:") {
+    msg.className = "msg err";
+    msg.textContent = "Solving needs the local server: run `cdcl serve` and open http://127.0.0.1:8080/. " +
+      "Without it, load a trace made with `cdcl file.cnf --trace out.json`.";
+    return;
+  }
+  try {
+    const t0 = performance.now();
+    const res = await fetch("api/solve", { method: "POST", body: text, headers: { "Content-Type": "text/plain" } });
+    const data = await res.json();
+    if (data.error) { msg.className = "msg err"; msg.textContent = "Input error: " + data.error; return; }
+    data.round_trip_ms = performance.now() - t0;
+    msg.textContent = `${data.events.length} steps recorded.`;
+    loadTrace(data);
+  } catch (e) {
+    msg.className = "msg err"; msg.textContent = "Request failed: " + e.message;
+  }
+}
+
+// ------------------------------------------------------------ explanation
+function litStatus(s, l) { const v = s.val[Math.abs(l)]; return v === 0 ? 0 : (v > 0) === (l > 0) ? 1 : -1; }
+
+function describe(s, ev) {
+  if (!ev) return { head: "Initial state: nothing is assigned. Press → (next) to start.", detail: "" };
+  switch (ev.type) {
+    case "Decide": {
+      const k = T.moms_k ?? 1;
+      const rows = ev.candidates.map((c) =>
+        `<tr class="${c.var === Math.abs(ev.lit) ? "chosen" : ""}"><td>${vname(c.var)}</td><td>${c.pos}</td><td>${c.neg}</td><td>${c.score}</td></tr>`).join("");
+      return {
+        head: `Decision at level ${ev.level}: MOMS picks ${fmtAssign(ev.lit)}`,
+        detail: `BCP had nothing left to propagate, so the solver must guess. MOMS only looks at the unsatisfied clauses with the fewest ` +
+          `unassigned literals (here: <b>${ev.min_size}</b>) and scores each variable by ` +
+          `(f(x)+f(¬x))·2<sup>${k}</sup> + f(x)·f(¬x). Ties go to the lowest index; the polarity with more occurrences wins.` +
+          `<table><tr><th>var</th><th>f(x)</th><th>f(¬x)</th><th>score</th></tr>${rows}</table>`,
+      };
+    }
+    case "Propagate": {
+      const c = clauses[ev.reason];
+      const why = c.lits.length === 1 ? `${cname(ev.reason)} is a unit clause` :
+        `every other literal of ${cname(ev.reason)} ${fmtClause(c.lits)} is false`;
+      return {
+        head: `Unit propagation: ${fmtAssign(ev.lit)} (level ${ev.level}, reason ${cname(ev.reason)})`,
+        detail: `${why}, so ${fmtLit(ev.lit)} must be true. In the implication graph, ${vname(Math.abs(ev.lit))} gets an edge from each other literal of ${cname(ev.reason)}.`,
+      };
+    }
+    case "Conflict":
+      return {
+        head: `Conflict: every literal of ${cname(ev.clause)} ${fmtClause(clauses[ev.clause].lits)} is false (level ${ev.level})`,
+        detail: ev.level === 0
+          ? "The conflict happens at decision level 0, i.e. without any guesses. Nothing can be undone, so the formula is UNSATISFIABLE."
+          : "Conflict analysis starts from this clause and resolves backwards along the implication graph until only one literal " +
+            `from level ${ev.level} remains (the First UIP).` + analysisList(s),
+      };
+    case "Resolve": {
+      const cnt = ev.resolvent.filter((l) => s.lvl[Math.abs(l)] === s.level).length;
+      return {
+        head: `Resolve on ${vname(ev.pivot)}: ${fmtClause(ev.clause_a)} ⊗ ${cname(ev.clause_b)} → ${fmtClause(ev.resolvent)}`,
+        detail: `${vname(ev.pivot)} was the most recently assigned literal of the current clause at level ${s.level}; it is replaced by its reason ` +
+          `${cname(ev.clause_b)} ${fmtClause(clauses[ev.clause_b].lits)}. ` +
+          (cnt > 1 ? `${cnt} literals from level ${s.level} remain, so analysis continues.` : `Only one literal from level ${s.level} remains → First UIP found.`) +
+          analysisList(s),
+      };
+    }
+    case "Learn": {
+      const others = ev.lits.filter((l) => l !== -ev.uip);
+      return {
+        head: `Learn ${cname(ev.clause)} = ${fmtClause(ev.lits)} — First UIP: ${fmtLit(ev.uip)}`,
+        detail: `${fmtLit(-ev.uip)} is the only literal from the conflict level; after backjumping it becomes the single unassigned literal and is propagated. ` +
+          (others.length ? `The highest level among the other literals is ${ev.backjump_level}, so the solver backjumps to level ${ev.backjump_level}.`
+            : "It is a unit clause, so the solver backjumps to level 0.") +
+          " The cut in the implication graph separates the conflict side (orange) from the reason side; the cut edges come from exactly the literals of the learned clause." +
+          analysisList(s),
+      };
+    }
+    case "Backjump": {
+      const skipped = ev.from - ev.to - 1;
+      return {
+        head: `Backjump from level ${ev.from} to level ${ev.to}` + (skipped > 0 ? ` (non-chronological: skips ${skipped} level${skipped > 1 ? "s" : ""})` : ""),
+        detail: `Unassigned: ${ev.unassigned.map(fmtLit).join(", ") || "nothing"}. ` +
+          (skipped > 0 ? "Plain DPLL would only undo the last decision; CDCL jumps straight to the level where the learned clause becomes unit." : ""),
+      };
+    }
+    case "Result":
+      return ev.status === "SAT"
+        ? { head: "SATISFIABLE: every clause is satisfied", detail: "Model (free variables reported false): " + ev.model.map(fmtLit).join(", ") }
+        : ev.status === "UNSAT"
+          ? { head: "UNSATISFIABLE", detail: "A conflict at level 0 means no assignment can satisfy the formula." }
+          : { head: "UNKNOWN: conflict limit reached", detail: "" };
+  }
+  return { head: ev.type, detail: "" };
+}
+
+function analysisList(s) {
+  const a = s.analysis;
+  if (!a) return "";
+  const items = [`<li>start: ${cname(s.conflict)} ${fmtClause(clauses[s.conflict].lits)}</li>`];
+  a.steps.forEach((r, i) => items.push(
+    `<li class="${i === a.steps.length - 1 && !a.learn ? "cur" : ""}">⊗ ${cname(r.clause_b)} on ${vname(r.pivot)} → ${fmtClause(r.resolvent)}</li>`));
+  if (a.learn) items.push(`<li class="cur">learned ${cname(a.learn.clause)} ${fmtClause(a.learn.lits)}</li>`);
+  return `<ol class="steps">${items.join("")}</ol>`;
+}
+
+// ------------------------------------------------------------ panels
+function focusClauses(ev) {
+  if (!ev) return new Set();
+  switch (ev.type) {
+    case "Propagate": return new Set([ev.reason]);
+    case "Conflict": return new Set([ev.clause]);
+    case "Resolve": return new Set([ev.clause_b]);
+    case "Learn": return new Set([ev.clause]);
+  }
+  return new Set();
+}
+
+function litChip(s, l, extra = "") {
+  const st = litStatus(s, l);
+  return `<span class="lit ${st > 0 ? "t" : st < 0 ? "f" : "u"} ${extra}">${fmtLit(l)}</span>`;
+}
+
+function renderFormula(s, ev) {
+  const focus = focusClauses(ev);
+  const hideSat = $("hideSat").checked;
+  const visible = T.num_original + s.nLearned;
+  let html = "", rows = 0, hidden = 0;
+  for (let id = 0; id < visible; id++) {
+    if (id === 0) html += `<div class="group">Original clauses (${T.num_original})</div>`;
+    if (id === T.num_original) html += `<div class="group learnt">Learned clauses (${s.nLearned})</div>`;
+    const c = clauses[id];
+    let t = 0, f = 0, u = 0;
+    for (const l of c.lits) { const st = litStatus(s, l); st > 0 ? t++ : st < 0 ? f++ : u++; }
+    // A just-learned clause is all-false until the backjump; don't call it a conflict.
+    const justLearned = s.analysis && s.analysis.learn && s.analysis.learn.clause === id;
+    const cls = justLearned ? "new" : t > 0 ? "sat" : u === 0 ? "conf" : u === 1 ? "unit" : "open";
+    const tag = { new: "new · asserting after backjump", sat: "satisfied", conf: "conflict", unit: "unit", open: `${u} open` }[cls];
+    if (hideSat && cls === "sat" && !focus.has(id)) { hidden++; continue; }
+    if (rows++ >= MAX_CLAUSE_ROWS && !focus.has(id)) { hidden++; continue; }
+    html += `<div class="clause ${cls} ${c.learnt ? "learnt" : ""} ${focus.has(id) ? "focus" : ""}" data-id="${id}">` +
+      `<span class="name">${c.name}</span><span class="lits">${c.lits.map((l) => litChip(s, l)).join("") || "□"}</span>` +
+      `<span class="tag">${tag}</span></div>`;
+  }
+  if (hidden) html += `<div class="empty">${hidden} clause(s) not shown.</div>`;
+  const box = $("formula");
+  box.innerHTML = html;
+  const f = box.querySelector(".focus");
+  if (f) scrollWithin(box, f);
+}
+
+function scrollWithin(box, el) {
+  const top = el.offsetTop - box.offsetTop, bottom = top + el.offsetHeight;
+  if (top < box.scrollTop) box.scrollTop = top - 8;
+  else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight + 8;
+}
+
+function renderTrail(s, ev) {
+  if (!s.trail.length) { $("trail").innerHTML = `<div class="empty">Empty.</div>`; return; }
+  const nowVar = ev && (ev.type === "Decide" || ev.type === "Propagate") ? Math.abs(ev.lit) : 0;
+  const byLevel = [];
+  for (const l of s.trail) (byLevel[s.lvl[Math.abs(l)]] ||= []).push(l);
+  let html = "";
+  for (let lv = 0; lv <= s.level; lv++) {
+    const lits = byLevel[lv] || [];
+    html += `<div class="lvl ${lv === s.level ? "cur" : ""}"><span class="lname">L${lv}</span><span>` +
+      (lits.map((l) => {
+        const v = Math.abs(l), r = s.reason[v], now = v === nowVar ? "now" : "";
+        return r < 0 ? `<span class="lit d ${now}" title="decision">${fmtLit(l)}<sub>d</sub></span>`
+          : `<span class="lit t ${now}" title="implied by ${cname(r)}">${fmtLit(l)}<sub>${cname(r)}</sub></span>`;
+      }).join("") || `<span class="msg">—</span>`) + `</span></div>`;
+  }
+  $("trail").innerHTML = html;
+}
+
+function renderGraph(s, ev) {
+  const box = $("graph");
+  if (!s.trail.length) { box.innerHTML = `<div class="empty">Nothing assigned yet.</div>`; $("graphNote").textContent = ""; return; }
+  // Keep the most recent levels when the graph gets large.
+  let minLevel = 0;
+  const count = (lv) => s.trail.filter((l) => s.lvl[Math.abs(l)] >= lv).length;
+  while (minLevel < s.level && count(minLevel) > MAX_GRAPH_NODES) minLevel++;
+  const nodes = s.trail.filter((l) => s.lvl[Math.abs(l)] >= minLevel).slice(-MAX_GRAPH_NODES);
+  $("graphNote").textContent = nodes.length < s.trail.length ? `showing ${nodes.length} of ${s.trail.length} nodes (levels ≥ ${minLevel})` : "";
+
+  const DX = 112, DY = 74, X0 = 70, Y0 = 34, RX = 40, RY = 15;
+  const pos = new Map(), colOf = [];
+  for (const l of nodes) {
+    const v = Math.abs(l), lv = s.lvl[v], row = lv - minLevel;
+    colOf[row] = (colOf[row] || 0) + 1;
+    pos.set(v, { x: X0 + (colOf[row] - 1) * DX, y: Y0 + row * DY, lit: l, lv });
+  }
+  const K = "k";
+  if (s.conflict >= 0) {
+    const row = s.level - minLevel;
+    colOf[row] = (colOf[row] || 0) + 1;
+    pos.set(K, { x: X0 + (colOf[row] - 1) * DX, y: Y0 + row * DY });
+  }
+  const rows = s.level - minLevel + 1;
+  const width = X0 + Math.max(1, ...colOf.filter(Boolean)) * DX + 24;
+  const height = Y0 + rows * DY - 20;
+
+  const a = s.analysis;
+  const side = new Set(a ? a.side : []);
+  const uipVar = a && a.learn ? Math.abs(a.learn.uip) : 0;
+  const inConflictSide = (id) => id === K || side.has(id);
+  const nowVar = ev && (ev.type === "Decide" || ev.type === "Propagate") ? Math.abs(ev.lit) : 0;
+
+  const edges = [];
+  for (const [v, p] of pos) {
+    if (v === K) continue;
+    const r = s.reason[v];
+    if (r < 0) continue;
+    for (const l of clauses[r].lits) if (Math.abs(l) !== v && pos.has(Math.abs(l))) edges.push([Math.abs(l), v, r]);
+  }
+  if (s.conflict >= 0)
+    for (const l of clauses[s.conflict].lits) if (pos.has(Math.abs(l))) edges.push([Math.abs(l), K, s.conflict]);
+
+  const css = (n) => `var(--${n})`;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <defs>${["muted", "conflict"].map((c) => `<marker id="ah-${c}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${css(c)}"/></marker>`).join("")}</defs>`;
+  for (let r = 0; r < rows; r++) {
+    svg += `<line x1="0" y1="${Y0 + r * DY + DY / 2}" x2="${width}" y2="${Y0 + r * DY + DY / 2}" stroke="${css("line")}" stroke-dasharray="2 4"/>`;
+    svg += `<text class="rowlabel" x="6" y="${Y0 + r * DY + 4}">L${r + minLevel}</text>`;
+  }
+  const border = (p, q) => { // point on ellipse around p in direction of q
+    const dx = q.x - p.x, dy = q.y - p.y, t = 1 / Math.sqrt((dx / RX) ** 2 + (dy / RY) ** 2 || 1);
+    return { x: p.x + dx * Math.min(t, 1), y: p.y + dy * Math.min(t, 1) };
+  };
+  for (const [u, w, cid] of edges) {
+    const p = pos.get(u), q = pos.get(w);
+    const cut = a && !inConflictSide(u) && inConflictSide(w);
+    const color = cut ? "conflict" : "muted";
+    let path, lx, ly;
+    if (p.y === q.y && Math.abs(p.x - q.x) > DX * 1.1) { // same row, skip over nodes: arc above
+      const h = 18 + Math.abs(q.x - p.x) * 0.12, cx = (p.x + q.x) / 2, cy = p.y - RY - h;
+      const s1 = border(p, { x: cx, y: cy }), s2 = border(q, { x: cx, y: cy });
+      path = `M${s1.x},${s1.y} Q${cx},${cy} ${s2.x},${s2.y}`; lx = cx; ly = cy + h / 2 - 2;
+    } else {
+      const s1 = border(p, q), s2 = border(q, p);
+      path = `M${s1.x},${s1.y} L${s2.x},${s2.y}`; lx = (s1.x + s2.x) / 2; ly = (s1.y + s2.y) / 2 - 3;
+    }
+    svg += `<path d="${path}" fill="none" stroke="${css(color)}" stroke-width="${cut ? 2 : 1.2}" ${cut ? 'stroke-dasharray="6 4"' : ""} marker-end="url(#ah-${color})"><title>${cname(cid)}</title></path>`;
+    svg += `<text class="elabel" x="${lx}" y="${ly}" text-anchor="middle">${cname(cid)}</text>`;
+  }
+  for (const [v, p] of pos) {
+    let fill = "panel", stroke = "muted", sw = 1.3, label;
+    if (v === K) { fill = "false-bg"; stroke = "conflict"; sw = 2; label = `κ (${cname(s.conflict)})`; }
+    else {
+      label = `${fmtLit(p.lit)}@${p.lv}`;
+      if (s.reason[v] < 0) { fill = "decision-bg"; stroke = "decision"; sw = 2; }
+      if (side.has(v)) { fill = "side-bg"; stroke = "side"; sw = 2; }
+      if (v === uipVar) { fill = "learn-bg"; stroke = "learn"; sw = 3; }
+    }
+    if (v === nowVar) svg += `<ellipse cx="${p.x}" cy="${p.y}" rx="${RX + 5}" ry="${RY + 5}" fill="none" stroke="${css("focus")}" stroke-width="3"/>`;
+    svg += `<ellipse cx="${p.x}" cy="${p.y}" rx="${RX}" ry="${RY}" fill="${css(fill)}" stroke="${css(stroke)}" stroke-width="${sw}"/>`;
+    svg += `<text x="${p.x}" y="${p.y + 4}" text-anchor="middle">${esc(label)}</text>`;
+  }
+  svg += "</svg>";
+  box.innerHTML = svg;
+  const kp = pos.get(nowVar) || pos.get(K);
+  if (kp) {
+    if (kp.x < box.scrollLeft || kp.x > box.scrollLeft + box.clientWidth - 60) box.scrollLeft = kp.x - box.clientWidth / 2;
+    if (kp.y < box.scrollTop || kp.y > box.scrollTop + box.clientHeight - 30) box.scrollTop = kp.y - box.clientHeight / 2;
+  }
+}
+
+function shortText(ev) {
+  switch (ev.type) {
+    case "Decide": return `Decide ${fmtAssign(ev.lit)} @${ev.level}`;
+    case "Propagate": return `Propagate ${fmtAssign(ev.lit)} @${ev.level} by ${cname(ev.reason)}`;
+    case "Conflict": return `Conflict in ${cname(ev.clause)} @${ev.level}`;
+    case "Resolve": return `Resolve with ${cname(ev.clause_b)} on ${vname(ev.pivot)} → ${fmtClause(ev.resolvent)}`;
+    case "Learn": return `Learn ${cname(ev.clause)} ${fmtClause(ev.lits)} (UIP ${fmtLit(ev.uip)})`;
+    case "Backjump": return `Backjump ${ev.from} → ${ev.to}`;
+    case "Result": return `Result: ${ev.status}`;
+  }
+  return ev.type;
+}
+
+function renderLog() {
+  const N = T.events.length;
+  const lo = Math.max(0, step - LOG_WINDOW), hi = Math.min(N, step + LOG_WINDOW);
+  let html = `<ol start="${lo + 1}">`;
+  for (let i = lo; i < hi; i++) {
+    const ev = T.events[i];
+    const cls = i === step - 1 ? "cur" : i >= step ? "future" : "";
+    html += `<li data-step="${i + 1}" class="${cls} k-${ev.type}">${esc(shortText(ev))}</li>`;
+  }
+  html += "</ol>";
+  if (lo > 0) html = `<div class="empty">… ${lo} earlier events</div>` + html;
+  const box = $("logList");
+  box.innerHTML = html;
+  const c = box.querySelector("li.cur");
+  if (c) scrollWithin(box, c); else box.scrollTop = 0;
+}
+
+function render() {
+  const ev = step > 0 ? T.events[step - 1] : null;
+  const d = describe(cur, ev);
+  $("headline").innerHTML = esc(d.head);
+  $("detail").innerHTML = d.detail;
+  renderFormula(cur, ev);
+  renderTrail(cur, ev);
+  renderGraph(cur, ev);
+  renderLog();
+  const N = T.events.length;
+  $("scrub").value = step;
+  $("stepLabel").textContent = `step ${step} / ${N}`;
+  $("bStart").disabled = $("bPrev").disabled = step === 0;
+  $("bEnd").disabled = $("bNext").disabled = step === N;
+  $("bPrevC").disabled = findConflict(-1) < 0;
+  $("bNextC").disabled = findConflict(1) < 0;
+}
+
+function findConflict(dir) {
+  if (!T) return -1;
+  // A conflict at event index i is shown at step i + 1.
+  if (dir > 0) { for (let i = step; i < T.events.length; i++) if (T.events[i].type === "Conflict") return i + 1; }
+  else { for (let i = step - 2; i >= 0; i--) if (T.events[i].type === "Conflict") return i + 1; }
+  return -1;
+}
+
+// ------------------------------------------------------------ controls
+function stop() { if (timer) clearInterval(timer); timer = null; $("bPlay").textContent = "▶ play"; }
+function play() {
+  if (!T) return;
+  if (timer) return stop();
+  if (step >= T.events.length) goto(0);
+  $("bPlay").textContent = "⏸ pause";
+  timer = setInterval(() => { if (step >= T.events.length) stop(); else goto(step + 1); }, +$("speed").value);
+}
+
+$("bStart").onclick = () => { stop(); goto(0); };
+$("bEnd").onclick = () => { stop(); goto(T.events.length); };
+$("bPrev").onclick = () => { stop(); goto(step - 1); };
+$("bNext").onclick = () => { stop(); goto(step + 1); };
+$("bPrevC").onclick = () => { stop(); const k = findConflict(-1); if (k >= 0) goto(k); };
+$("bNextC").onclick = () => { stop(); const k = findConflict(1); if (k >= 0) goto(k); };
+$("bPlay").onclick = play;
+$("speed").onchange = () => { if (timer) { stop(); play(); } };
+$("scrub").oninput = (e) => { stop(); goto(+e.target.value); };
+$("hideSat").onchange = () => T && render();
+$("logList").onclick = (e) => { const li = e.target.closest("li[data-step]"); if (li) { stop(); goto(+li.dataset.step); } };
+$("solveBtn").onclick = solve;
+$("exampleSel").onchange = () => { $("cnfText").value = $("ex-" + $("exampleSel").value).textContent; };
+$("cnfFile").onchange = async (e) => { const f = e.target.files[0]; if (f) $("cnfText").value = await f.text(); };
+$("traceFile").onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try { loadTrace(JSON.parse(await f.text())); $("inputMsg").className = "msg"; $("inputMsg").textContent = `Loaded ${f.name}.`; }
+  catch (err) { $("inputMsg").className = "msg err"; $("inputMsg").textContent = "Not a valid trace file: " + err.message; }
+};
+document.addEventListener("keydown", (e) => {
+  if (!T || e.target.matches("textarea, input, select")) return;
+  const k = e.key;
+  if (k === "ArrowRight") { stop(); if (e.shiftKey) { const c = findConflict(1); if (c >= 0) goto(c); } else goto(step + 1); }
+  else if (k === "ArrowLeft") { stop(); if (e.shiftKey) { const c = findConflict(-1); if (c >= 0) goto(c); } else goto(step - 1); }
+  else if (k === "Home") { stop(); goto(0); }
+  else if (k === "End") { stop(); goto(T.events.length); }
+  else if (k === " ") play();
+  else return;
+  e.preventDefault();
+});
+
+$("cnfText").value = $("ex-spec").textContent;
+</script>
+</body>
+</html>

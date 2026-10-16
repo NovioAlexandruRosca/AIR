@@ -1,0 +1,19 @@
+[package]
+name = "cdcl"
+version = "0.1.0"
+edition = "2021"
+description = "CDCL SAT solver (MOMS + First-UIP learning + backjumping) with a step-by-step web visualizer"
+
+[lib]
+name = "cdcl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cdcl"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+debug = false
+lto = true
