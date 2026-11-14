@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="Definitions_CDCL"
+                  targetNamespace="http://bpmn.io/schema/bpmn"
+                  exporter="bpmn-js"
+                  exporterVersion="17.0.0">
+  <bpmn:process id="Process_CdclSolve" name="CDCL solver: Solver::solve()" isExecutable="false">
+
+    <bpmn:startEvent id="Start_1" name="DIMACS CNF parsed">
+      <bpmn:outgoing>F1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:task id="Task_LoadUnits" name="Load unit clauses at level 0">
+      <bpmn:documentation>load_units(): enqueue unit input clauses before search.</bpmn:documentation>
+      <bpmn:incoming>F1</bpmn:incoming>
+      <bpmn:outgoing>F2</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="GW_UnitConflict" name="Conflict among units?">
+      <bpmn:incoming>F2</bpmn:incoming>
+      <bpmn:outgoing>F3</bpmn:outgoing>
+      <bpmn:outgoing>F4</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="End_Unsat0" name="UNSAT">
+      <bpmn:incoming>F3</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:exclusiveGateway id="GW_LoopMerge">
+      <bpmn:incoming>F4</bpmn:incoming>
+      <bpmn:incoming>F15</bpmn:incoming>
+      <bpmn:incoming>F25</bpmn:incoming>
+      <bpmn:outgoing>F5</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:exclusiveGateway id="GW_Stop" name="Timeout or Ctrl+C?">
+      <bpmn:incoming>F5</bpmn:incoming>
+      <bpmn:outgoing>F6</bpmn:outgoing>
+      <bpmn:outgoing>F7</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="End_UnknownStop" name="UNKNOWN">
+      <bpmn:incoming>F6</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:task id="Task_BCP" name="Unit propagation (2WL BCP)">
+      <bpmn:documentation>propagate(): two watched literals with blockers; returns a conflicting clause or none.</bpmn:documentation>
+      <bpmn:incoming>F7</bpmn:incoming>
+      <bpmn:outgoing>F8</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="GW_Conflict" name="Conflict?">
+      <bpmn:incoming>F8</bpmn:incoming>
+      <bpmn:outgoing>F9</bpmn:outgoing>
+      <bpmn:outgoing>F10</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:task id="Task_PickBranch" name="Pick branch literal (MOMS)">
+      <bpmn:documentation>pick_branch(): score (f(x)+f(-x))*2^k + f(x)*f(-x) over the smallest open original clauses.</bpmn:documentation>
+      <bpmn:incoming>F10</bpmn:incoming>
+      <bpmn:outgoing>F11</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="GW_OpenClause" name="Open clause left?">
+      <bpmn:incoming>F11</bpmn:incoming>
+      <bpmn:outgoing>F12</bpmn:outgoing>
+      <bpmn:outgoing>F13</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:task id="Task_Decide" name="Decide literal (open new level)">
+      <bpmn:documentation>decide_traced(): push trail_lim, enqueue the literal with no reason.</bpmn:documentation>
+      <bpmn:incoming>F12</bpmn:incoming>
+      <bpmn:outgoing>F15</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_Verify" name="Build and verify model">
+      <bpmn:documentation>finish(Sat): free variables set false; model checked against every original clause.</bpmn:documentation>
+      <bpmn:incoming>F13</bpmn:incoming>
+      <bpmn:outgoing>F14</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:endEvent id="End_Sat" name="SAT">
+      <bpmn:incoming>F14</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:exclusiveGateway id="GW_Level0" name="Decision level 0?">
+      <bpmn:incoming>F9</bpmn:incoming>
+      <bpmn:outgoing>F16</bpmn:outgoing>
+      <bpmn:outgoing>F17</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="End_Unsat" name="UNSAT">
+      <bpmn:incoming>F16</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:exclusiveGateway id="GW_ConflictLimit" name="Conflict limit reached?">
+      <bpmn:incoming>F17</bpmn:incoming>
+      <bpmn:outgoing>F18</bpmn:outgoing>
+      <bpmn:outgoing>F19</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="End_UnknownLimit" name="UNKNOWN">
+      <bpmn:incoming>F18</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:task id="Task_Analyze" name="Analyze conflict, learn First-UIP clause">
+      <bpmn:documentation>analyze(): resolve on the latest conflict-level literal until one remains (the First UIP).</bpmn:documentation>
+      <bpmn:incoming>F19</bpmn:incoming>
+      <bpmn:outgoing>F20</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Task_Backjump" name="Backjump and assert learned clause">
+      <bpmn:documentation>learn_and_backjump(): jump to the second-highest level in the learned clause; it becomes unit.</bpmn:documentation>
+      <bpmn:incoming>F20</bpmn:incoming>
+      <bpmn:outgoing>F21</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="GW_Reduce" name="Too many learned clauses?">
+      <bpmn:incoming>F21</bpmn:incoming>
+      <bpmn:outgoing>F22</bpmn:outgoing>
+      <bpmn:outgoing>F23</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:task id="Task_ReduceDB" name="Delete learned clauses (reduce DB)">
+      <bpmn:documentation>reduce_db(): skipped with --no-reduce; locked clauses (reasons on the trail) are kept.</bpmn:documentation>
+      <bpmn:incoming>F22</bpmn:incoming>
+      <bpmn:outgoing>F24</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="GW_ReduceMerge">
+      <bpmn:incoming>F23</bpmn:incoming>
+      <bpmn:incoming>F24</bpmn:incoming>
+      <bpmn:outgoing>F25</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:sequenceFlow id="F1" sourceRef="Start_1" targetRef="Task_LoadUnits" />
+    <bpmn:sequenceFlow id="F2" sourceRef="Task_LoadUnits" targetRef="GW_UnitConflict" />
+    <bpmn:sequenceFlow id="F3" name="yes" sourceRef="GW_UnitConflict" targetRef="End_Unsat0" />
+    <bpmn:sequenceFlow id="F4" name="no" sourceRef="GW_UnitConflict" targetRef="GW_LoopMerge" />
+    <bpmn:sequenceFlow id="F5" sourceRef="GW_LoopMerge" targetRef="GW_Stop" />
+    <bpmn:sequenceFlow id="F6" name="yes" sourceRef="GW_Stop" targetRef="End_UnknownStop" />
+    <bpmn:sequenceFlow id="F7" name="no" sourceRef="GW_Stop" targetRef="Task_BCP" />
+    <bpmn:sequenceFlow id="F8" sourceRef="Task_BCP" targetRef="GW_Conflict" />
+    <bpmn:sequenceFlow id="F9" name="yes" sourceRef="GW_Conflict" targetRef="GW_Level0" />
+    <bpmn:sequenceFlow id="F10" name="no" sourceRef="GW_Conflict" targetRef="Task_PickBranch" />
+    <bpmn:sequenceFlow id="F11" sourceRef="Task_PickBranch" targetRef="GW_OpenClause" />
+    <bpmn:sequenceFlow id="F12" name="yes" sourceRef="GW_OpenClause" targetRef="Task_Decide" />
+    <bpmn:sequenceFlow id="F13" name="no" sourceRef="GW_OpenClause" targetRef="Task_Verify" />
+    <bpmn:sequenceFlow id="F14" sourceRef="Task_Verify" targetRef="End_Sat" />
+    <bpmn:sequenceFlow id="F15" sourceRef="Task_Decide" targetRef="GW_LoopMerge" />
+    <bpmn:sequenceFlow id="F16" name="yes" sourceRef="GW_Level0" targetRef="End_Unsat" />
+    <bpmn:sequenceFlow id="F17" name="no" sourceRef="GW_Level0" targetRef="GW_ConflictLimit" />
+    <bpmn:sequenceFlow id="F18" name="yes" sourceRef="GW_ConflictLimit" targetRef="End_UnknownLimit" />
+    <bpmn:sequenceFlow id="F19" name="no" sourceRef="GW_ConflictLimit" targetRef="Task_Analyze" />
+    <bpmn:sequenceFlow id="F20" sourceRef="Task_Analyze" targetRef="Task_Backjump" />
+    <bpmn:sequenceFlow id="F21" sourceRef="Task_Backjump" targetRef="GW_Reduce" />
+    <bpmn:sequenceFlow id="F22" name="yes" sourceRef="GW_Reduce" targetRef="Task_ReduceDB" />
+    <bpmn:sequenceFlow id="F23" name="no" sourceRef="GW_Reduce" targetRef="GW_ReduceMerge" />
+    <bpmn:sequenceFlow id="F24" sourceRef="Task_ReduceDB" targetRef="GW_ReduceMerge" />
+    <bpmn:sequenceFlow id="F25" sourceRef="GW_ReduceMerge" targetRef="GW_LoopMerge" />
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_CdclSolve">
+
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="152" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_LoadUnits_di" bpmnElement="Task_LoadUnits">
+        <dc:Bounds x="230" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_UnitConflict_di" bpmnElement="GW_UnitConflict" isMarkerVisible="true">
+        <dc:Bounds x="385" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Unsat0_di" bpmnElement="End_Unsat0">
+        <dc:Bounds x="392" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_LoopMerge_di" bpmnElement="GW_LoopMerge" isMarkerVisible="true">
+        <dc:Bounds x="475" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Stop_di" bpmnElement="GW_Stop" isMarkerVisible="true">
+        <dc:Bounds x="565" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_UnknownStop_di" bpmnElement="End_UnknownStop">
+        <dc:Bounds x="572" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_BCP_di" bpmnElement="Task_BCP">
+        <dc:Bounds x="670" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Conflict_di" bpmnElement="GW_Conflict" isMarkerVisible="true">
+        <dc:Bounds x="825" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_PickBranch_di" bpmnElement="Task_PickBranch">
+        <dc:Bounds x="930" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_OpenClause_di" bpmnElement="GW_OpenClause" isMarkerVisible="true">
+        <dc:Bounds x="1085" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Decide_di" bpmnElement="Task_Decide">
+        <dc:Bounds x="1060" y="20" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Verify_di" bpmnElement="Task_Verify">
+        <dc:Bounds x="1190" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Sat_di" bpmnElement="End_Sat">
+        <dc:Bounds x="1342" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Level0_di" bpmnElement="GW_Level0" isMarkerVisible="true">
+        <dc:Bounds x="825" y="305" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_Unsat_di" bpmnElement="End_Unsat">
+        <dc:Bounds x="832" y="432" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_ConflictLimit_di" bpmnElement="GW_ConflictLimit" isMarkerVisible="true">
+        <dc:Bounds x="925" y="305" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_UnknownLimit_di" bpmnElement="End_UnknownLimit">
+        <dc:Bounds x="932" y="432" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Analyze_di" bpmnElement="Task_Analyze">
+        <dc:Bounds x="1030" y="290" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Backjump_di" bpmnElement="Task_Backjump">
+        <dc:Bounds x="1180" y="290" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_Reduce_di" bpmnElement="GW_Reduce" isMarkerVisible="true">
+        <dc:Bounds x="1335" y="305" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_ReduceDB_di" bpmnElement="Task_ReduceDB">
+        <dc:Bounds x="1310" y="420" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="GW_ReduceMerge_di" bpmnElement="GW_ReduceMerge" isMarkerVisible="true">
+        <dc:Bounds x="1435" y="305" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="F1_di" bpmnElement="F1">
+        <di:waypoint x="188" y="200" /><di:waypoint x="230" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F2_di" bpmnElement="F2">
+        <di:waypoint x="330" y="200" /><di:waypoint x="385" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F3_di" bpmnElement="F3">
+        <di:waypoint x="410" y="225" /><di:waypoint x="410" y="302" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F4_di" bpmnElement="F4">
+        <di:waypoint x="435" y="200" /><di:waypoint x="475" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F5_di" bpmnElement="F5">
+        <di:waypoint x="525" y="200" /><di:waypoint x="565" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F6_di" bpmnElement="F6">
+        <di:waypoint x="590" y="225" /><di:waypoint x="590" y="302" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F7_di" bpmnElement="F7">
+        <di:waypoint x="615" y="200" /><di:waypoint x="670" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F8_di" bpmnElement="F8">
+        <di:waypoint x="770" y="200" /><di:waypoint x="825" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F9_di" bpmnElement="F9">
+        <di:waypoint x="850" y="225" /><di:waypoint x="850" y="305" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F10_di" bpmnElement="F10">
+        <di:waypoint x="875" y="200" /><di:waypoint x="930" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F11_di" bpmnElement="F11">
+        <di:waypoint x="1030" y="200" /><di:waypoint x="1085" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F12_di" bpmnElement="F12">
+        <di:waypoint x="1110" y="175" /><di:waypoint x="1110" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F13_di" bpmnElement="F13">
+        <di:waypoint x="1135" y="200" /><di:waypoint x="1190" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F14_di" bpmnElement="F14">
+        <di:waypoint x="1290" y="200" /><di:waypoint x="1342" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F15_di" bpmnElement="F15">
+        <di:waypoint x="1060" y="60" /><di:waypoint x="500" y="60" /><di:waypoint x="500" y="175" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F16_di" bpmnElement="F16">
+        <di:waypoint x="850" y="355" /><di:waypoint x="850" y="432" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F17_di" bpmnElement="F17">
+        <di:waypoint x="875" y="330" /><di:waypoint x="925" y="330" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F18_di" bpmnElement="F18">
+        <di:waypoint x="950" y="355" /><di:waypoint x="950" y="432" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F19_di" bpmnElement="F19">
+        <di:waypoint x="975" y="330" /><di:waypoint x="1030" y="330" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F20_di" bpmnElement="F20">
+        <di:waypoint x="1130" y="330" /><di:waypoint x="1180" y="330" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F21_di" bpmnElement="F21">
+        <di:waypoint x="1280" y="330" /><di:waypoint x="1335" y="330" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F22_di" bpmnElement="F22">
+        <di:waypoint x="1360" y="355" /><di:waypoint x="1360" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F23_di" bpmnElement="F23">
+        <di:waypoint x="1385" y="330" /><di:waypoint x="1435" y="330" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F24_di" bpmnElement="F24">
+        <di:waypoint x="1410" y="460" /><di:waypoint x="1460" y="460" /><di:waypoint x="1460" y="355" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="F25_di" bpmnElement="F25">
+        <di:waypoint x="1485" y="330" /><di:waypoint x="1520" y="330" /><di:waypoint x="1520" y="560" /><di:waypoint x="500" y="560" /><di:waypoint x="500" y="225" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

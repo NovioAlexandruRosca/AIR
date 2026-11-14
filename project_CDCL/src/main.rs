@@ -10,21 +10,23 @@ use std::time::{Duration, Instant};
 const SERVE_TIMEOUT: Duration = Duration::from_secs(60);
 
 const USAGE: &str = "\
-CDCL SAT solver (MOMS decisions, First-UIP learning, backjumping)
+CDCL SAT solver (MOMS decisions, First-UIP learning, backjumping) and
+CDCL(T) SMT solver for LIA + algebraic datatypes (Nelson–Oppen)
 
 USAGE:
-  cdcl <file.cnf> [--trace <out.json>] [--trace-limit <N>] [--max-conflicts <N>] [--timeout <T>]
+  cdcl <file.cnf|file.smt2> [--trace <out.json>] [--trace-limit <N>] [--max-conflicts <N>] [--timeout <T>]
   cdcl serve [--port <P>] [--trace-limit <N>] [--max-conflicts <N>] [--timeout <T>]
 
-  <file.cnf>          DIMACS CNF input ('-' reads stdin)
-  --trace <out.json>  write the step-by-step trace for the visualizer
+  <file>              DIMACS CNF, or SMT-LIB 2 (.smt2 or text starting with '(');
+                      '-' reads stdin
+  --trace <out.json>  write the solver's step-by-step trace as JSON
   --trace-limit <N>   stop recording after N events (default 20000)
   --max-conflicts <N> give up (s UNKNOWN) after N conflicts
   --timeout <T>       give up (s UNKNOWN) after T: 30, 30s, 500ms, 2m, or none
                       (serve default: 60s)
   --no-reduce         never delete learned clauses (by default the worse half is
                       deleted once 8000+ are kept; never happens inside a trace)
-  serve               start the web visualizer on http://127.0.0.1:<P>/ (default 8080)
+  serve               start the DPLL(T) playground on http://127.0.0.1:<P>/ (default 8080)
 
 Exit code: 10 = SAT, 20 = UNSAT, 0 = UNKNOWN, 1 = error.";
 
@@ -138,7 +140,7 @@ fn main() -> ExitCode {
         };
     }
 
-    let path = args.input.unwrap();
+    let path = args.input.clone().unwrap();
     let text = if path == "-" {
         let mut s = String::new();
         if let Err(e) = std::io::Read::read_to_string(&mut std::io::stdin(), &mut s) {
@@ -156,6 +158,10 @@ fn main() -> ExitCode {
         }
     };
 
+    if path.ends_with(".smt2") || cdcl::smt::looks_like_smtlib(&text) {
+        return run_smt(&text, &path, &args);
+    }
+
     let parse_start = Instant::now();
     let parsed = parse(&text);
     let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
@@ -166,7 +172,11 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    println!("c parsed {} variables, {} clauses", cnf.num_vars, cnf.clauses.len());
+    println!(
+        "c parsed {} variables, {} clauses",
+        cnf.num_vars,
+        cnf.clauses.len()
+    );
     for w in &cnf.warnings {
         println!("c warning: {w}");
     }
@@ -193,7 +203,11 @@ fn main() -> ExitCode {
         "c time {:.3} ms (parse {:.3} ms){}",
         elapsed.as_secs_f64() * 1000.0,
         parse_ms,
-        if args.trace.is_some() { ", tracing on" } else { "" }
+        if args.trace.is_some() {
+            ", tracing on"
+        } else {
+            ""
+        }
     );
 
     if let Some(out) = &args.trace {
@@ -208,8 +222,15 @@ fn main() -> ExitCode {
             eprintln!("error: cannot write {out}: {e}");
             return ExitCode::from(1);
         }
-        let note = if solver.tracer.truncated { " (truncated)" } else { "" };
-        println!("c trace: {} events written to {out}{note}", solver.tracer.events.len());
+        let note = if solver.tracer.truncated {
+            " (truncated)"
+        } else {
+            ""
+        };
+        println!(
+            "c trace: {} events written to {out}{note}",
+            solver.tracer.events.len()
+        );
     }
 
     match status {
@@ -241,6 +262,91 @@ fn main() -> ExitCode {
                 println!("c stopped: {}", r.as_str());
             }
             println!("s UNKNOWN");
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+/// SMT-LIB input: CDCL(T) with the LIA and DT theories.
+fn run_smt(text: &str, path: &str, args: &Args) -> ExitCode {
+    let limits = Limits {
+        max_conflicts: args.max_conflicts,
+        timeout: args.timeout.flatten(),
+        cancel: None,
+        no_reduce: args.no_reduce,
+    };
+    let trace_limit = args.trace.as_ref().map(|_| args.trace_limit);
+    let r = match cdcl::smt::solve(text, trace_limit, &limits) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let p = &r.prepared;
+    let comb = p.comb.borrow();
+    let names: Vec<&str> = comb.theories.iter().map(|t| t.name()).collect();
+    println!(
+        "; {} assertions, theories {}, {} Boolean variables, {} clauses",
+        p.problem.assertions.len(),
+        names.join(" + "),
+        p.prep.cnf.num_vars,
+        p.prep.cnf.clauses.len()
+    );
+    for &d in &p.prep.definitions {
+        println!("; purification: {}", comb.terms.display(d));
+    }
+    if !comb.shared.is_empty() {
+        let shared: Vec<String> = comb.shared.iter().map(|&t| comb.terms.display(t)).collect();
+        println!("; shared constants (Nelson–Oppen): {}", shared.join(", "));
+    }
+    let st = &r.solver.stats;
+    println!(
+        "; decisions {}  propagations {}  conflicts {}  theory propagations {}  theory conflicts {}  theory splits {}",
+        st.decisions, st.propagations, st.conflicts, st.theory_propagations, st.theory_conflicts, st.theory_splits
+    );
+    println!(
+        "; time {:.3} ms (parse {:.3} ms)",
+        r.timing.solve_ms, r.timing.parse_ms
+    );
+    drop(comb);
+
+    if let Some(out) = &args.trace {
+        if let Err(e) = std::fs::write(out, cdcl::smt::result_json(&r)) {
+            eprintln!("error: cannot write {out}: {e}");
+            return ExitCode::from(1);
+        }
+        println!(
+            "; trace: {} events written to {out}",
+            r.solver.tracer.events.len()
+        );
+    }
+
+    match r.status {
+        Status::Sat => {
+            if r.verified != Some(true) {
+                eprintln!("; ERROR: the model does not satisfy every assertion");
+                return ExitCode::from(1);
+            }
+            println!("sat");
+            println!("{}", cdcl::smt::model_smtlib(&r.model));
+            println!(
+                "; model verified against all {} assertions",
+                p.problem.assertions.len()
+            );
+            ExitCode::from(10)
+        }
+        Status::Unsat => {
+            println!("unsat");
+            ExitCode::from(20)
+        }
+        Status::Unknown => {
+            if let Some(why) = r.solver.incomplete_reason.as_ref() {
+                println!("; {why}");
+            } else if let Some(s) = r.solver.stop_reason {
+                println!("; stopped: {}", s.as_str());
+            }
+            println!("unknown");
             ExitCode::SUCCESS
         }
     }

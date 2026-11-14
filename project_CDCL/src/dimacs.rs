@@ -83,7 +83,10 @@ pub fn parse(input: &str) -> Result<Cnf, ParseError> {
         }
 
         let (num_vars, _) = header.ok_or_else(|| {
-            err(line_no, "clause found before the 'p cnf <vars> <clauses>' header")
+            err(
+                line_no,
+                "clause found before the 'p cnf <vars> <clauses>' header",
+            )
         })?;
 
         for tok in line.split_whitespace() {
@@ -179,10 +182,22 @@ mod tests {
     #[test]
     fn errors() {
         assert!(parse("1 2 0\n").unwrap_err().message.contains("before"));
-        assert!(parse("c only comments\n").unwrap_err().message.contains("missing"));
+        assert!(parse("c only comments\n")
+            .unwrap_err()
+            .message
+            .contains("missing"));
         assert_eq!(parse("p cnf 2 1\n1 3 0\n").unwrap_err().line, 2);
-        assert!(parse("p cnf 2 1\n1 x 0\n").unwrap_err().message.contains("'x'"));
-        assert!(parse("p cnf 2\n").unwrap_err().message.contains("malformed"));
-        assert!(parse("p cnf 2 1\np cnf 2 1\n").unwrap_err().message.contains("duplicate"));
+        assert!(parse("p cnf 2 1\n1 x 0\n")
+            .unwrap_err()
+            .message
+            .contains("'x'"));
+        assert!(parse("p cnf 2\n")
+            .unwrap_err()
+            .message
+            .contains("malformed"));
+        assert!(parse("p cnf 2 1\np cnf 2 1\n")
+            .unwrap_err()
+            .message
+            .contains("duplicate"));
     }
 }

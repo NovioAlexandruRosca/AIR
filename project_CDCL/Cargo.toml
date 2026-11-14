@@ -2,7 +2,7 @@
 name = "cdcl"
 version = "0.1.0"
 edition = "2021"
-description = "CDCL SAT solver (MOMS + First-UIP learning + backjumping) with a step-by-step web visualizer"
+description = "CDCL SAT solver (MOMS + First-UIP learning + backjumping) and CDCL(T) for LIA + datatypes, with a DPLL(T) playground web page"
 
 [lib]
 name = "cdcl"

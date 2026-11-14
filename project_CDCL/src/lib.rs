@@ -3,9 +3,12 @@
 //! - [`dimacs`] — DIMACS CNF parser
 //! - [`solver`] — CDCL (2WL BCP, MOMS, First-UIP, backjumping)
 //! - [`trace`] — trace events and their JSON encoding
+//! - [`smt`] — CDCL(T): SMT-LIB front end, LIA and DT theories,
+//!   Nelson–Oppen combination
 
 pub mod dimacs;
 pub mod lit;
+pub mod smt;
 pub mod solver;
 pub mod trace;
 
@@ -97,6 +100,18 @@ pub fn solve_to_json(cnf: &Cnf, trace_limit: usize, limits: &Limits, parse_ms: f
 }
 
 pub fn run_json(cnf: &Cnf, solver: &Solver, status: Status, timing: &Timing) -> String {
+    run_json_ext(cnf, solver, status, timing, "")
+}
+
+/// Like [`run_json`]; `extra` is inserted as additional top-level fields
+/// (e.g. `"smt":{...},`), and must end with a comma when not empty.
+pub fn run_json_ext(
+    cnf: &Cnf,
+    solver: &Solver,
+    status: Status,
+    timing: &Timing,
+    extra: &str,
+) -> String {
     let mut out = String::with_capacity(1024 + solver.tracer.events.len() * 64);
     let _ = write!(
         out,
@@ -145,15 +160,19 @@ pub fn run_json(cnf: &Cnf, solver: &Solver, status: Status, timing: &Timing) -> 
     let st = &solver.stats;
     let _ = write!(
         out,
-        r#"],"stats":{{"decisions":{},"propagations":{},"conflicts":{},"learned":{},"deleted":{},"max_level":{}}},"moms_k":{},"#,
+        r#"],"stats":{{"decisions":{},"propagations":{},"conflicts":{},"learned":{},"deleted":{},"max_level":{},"theory_propagations":{},"theory_conflicts":{},"theory_splits":{}}},"moms_k":{},"#,
         st.decisions,
         st.propagations,
         st.conflicts,
         st.learned,
         st.deleted,
         st.max_level,
+        st.theory_propagations,
+        st.theory_conflicts,
+        st.theory_splits,
         solver::MOMS_K
     );
+    out.push_str(extra);
     let untraced = timing
         .solve_untraced_ms
         .map_or("null".to_string(), |t| format!("{t:.4}"));

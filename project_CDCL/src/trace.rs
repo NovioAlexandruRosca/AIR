@@ -1,4 +1,4 @@
-//! Solver trace: the contract between the solver and the visualizer.
+//! Solver trace: the contract between the solver and the playground.
 //!
 //! Every event carries enough data for the UI to rebuild the full state by
 //! replaying events from the start (see README, "Trace format").
@@ -16,6 +16,14 @@ pub struct MomsCandidate {
     pub score: u64,
 }
 
+/// Who made a decision that MOMS did not pick: a theory asking for a case
+/// split ("LIA", "DT", "Nelson–Oppen") or the user in the playground.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecisionOrigin {
+    pub by: String,
+    pub why: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     Decide {
@@ -23,6 +31,8 @@ pub enum Event {
         level: usize,
         min_size: usize,
         candidates: Vec<MomsCandidate>,
+        /// None for an ordinary MOMS decision.
+        origin: Option<DecisionOrigin>,
     },
     Propagate {
         lit: i64,
@@ -62,6 +72,36 @@ pub enum Event {
     Result {
         status: &'static str,
         model: Vec<i64>,
+    },
+    /// A clause added during search by a theory: an explanation for a
+    /// theory propagation, a conflict, a lemma or an axiom for a new atom.
+    TheoryClause {
+        clause: usize,
+        lits: Vec<i64>,
+        /// "explanation" | "conflict" | "lemma" | "axiom"
+        kind: &'static str,
+        theory: String,
+        why: String,
+    },
+    /// A Boolean variable created during search (e.g. a branch-and-bound
+    /// bound or a split atom). `var` is 1-based.
+    NewVar {
+        var: usize,
+        label: String,
+        /// Rendering of the negated atom (e.g. "x > 3" for "x ≤ 3").
+        neg: String,
+        kind: &'static str,
+        /// Comma-separated theory names.
+        theories: String,
+    },
+    /// Free-form theory reasoning step for the UI. `data` is a JSON value
+    /// (theory state snapshot or details), inserted verbatim.
+    Theory {
+        theory: String,
+        kind: &'static str,
+        message: String,
+        lits: Vec<i64>,
+        data: String,
     },
 }
 
@@ -145,6 +185,7 @@ impl Event {
                 level,
                 min_size,
                 candidates,
+                origin,
             } => {
                 let _ = write!(
                     out,
@@ -160,7 +201,15 @@ impl Event {
                         c.var, c.pos, c.neg, c.score
                     );
                 }
-                out.push_str("]}");
+                out.push(']');
+                if let Some(o) = origin {
+                    out.push_str(r#","origin":{"by":"#);
+                    json_string(out, &o.by);
+                    out.push_str(r#","why":"#);
+                    json_string(out, &o.why);
+                    out.push('}');
+                }
+                out.push('}');
             }
             Event::Propagate { lit, reason, level } => {
                 let _ = write!(
@@ -189,7 +238,10 @@ impl Event {
                     }
                     None => out.push_str(r#","clause_a_id":null"#),
                 }
-                let _ = write!(out, r#","clause_b":{clause_b},"pivot":{pivot},"resolvent":"#);
+                let _ = write!(
+                    out,
+                    r#","clause_b":{clause_b},"pivot":{pivot},"resolvent":"#
+                );
                 ints(out, resolvent);
                 out.push('}');
             }
@@ -214,13 +266,63 @@ impl Event {
                 to,
                 unassigned,
             } => {
-                let _ = write!(out, r#"{{"type":"Backjump","from":{from},"to":{to},"unassigned":"#);
+                let _ = write!(
+                    out,
+                    r#"{{"type":"Backjump","from":{from},"to":{to},"unassigned":"#
+                );
                 ints(out, unassigned);
                 out.push('}');
             }
             Event::Result { status, model } => {
                 let _ = write!(out, r#"{{"type":"Result","status":"{status}","model":"#);
                 ints(out, model);
+                out.push('}');
+            }
+            Event::TheoryClause {
+                clause,
+                lits,
+                kind,
+                theory,
+                why,
+            } => {
+                let _ = write!(out, r#"{{"type":"TheoryClause","clause":{clause},"lits":"#);
+                ints(out, lits);
+                let _ = write!(out, r#","kind":"{kind}","theory":"#);
+                json_string(out, theory);
+                out.push_str(r#","why":"#);
+                json_string(out, why);
+                out.push('}');
+            }
+            Event::NewVar {
+                var,
+                label,
+                neg,
+                kind,
+                theories,
+            } => {
+                let _ = write!(out, r#"{{"type":"NewVar","var":{var},"label":"#);
+                json_string(out, label);
+                out.push_str(r#","neg":"#);
+                json_string(out, neg);
+                let _ = write!(out, r#","kind":"{kind}","theories":"#);
+                json_string(out, theories);
+                out.push('}');
+            }
+            Event::Theory {
+                theory,
+                kind,
+                message,
+                lits,
+                data,
+            } => {
+                out.push_str(r#"{"type":"Theory","theory":"#);
+                json_string(out, theory);
+                let _ = write!(out, r#","kind":"{kind}","message":"#);
+                json_string(out, message);
+                out.push_str(r#","lits":"#);
+                ints(out, lits);
+                out.push_str(r#","data":"#);
+                out.push_str(if data.is_empty() { "null" } else { data });
                 out.push('}');
             }
         }
