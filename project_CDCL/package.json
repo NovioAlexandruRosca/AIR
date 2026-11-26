@@ -1,0 +1,15 @@
+{
+  "name": "cdcl-dpllt",
+  "private": true,
+  "version": "1.0.0",
+  "description": "CDCL SAT solver and DPLL(T) SMT solver (LIA, DT, Nelson–Oppen) in TypeScript, with an interactive playground that runs entirely in the browser.",
+  "scripts": {
+    "postinstall": "cd solver && npm install && cd ../playground && npm install",
+    "dev": "npm run dev --prefix playground",
+    "build": "npm run build --prefix playground",
+    "preview": "npm run preview --prefix playground",
+    "test": "npm test --prefix solver",
+    "typecheck": "npm run typecheck --prefix solver && npm run typecheck --prefix playground",
+    "solve": "npm run cli --prefix solver --"
+  }
+}
