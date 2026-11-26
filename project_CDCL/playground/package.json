@@ -2,11 +2,12 @@
   "name": "cdcl-playground",
   "private": true,
   "version": "1.0.0",
-  "description": "Interactive DPLL(T) playground for the CDCL/SMT solver (React). `npm run build` writes ../ui/playground/.",
+  "description": "Interactive DPLL(T) playground (React). The solver (../solver) runs in the browser; `npm run build` writes the static site to ../dist/.",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

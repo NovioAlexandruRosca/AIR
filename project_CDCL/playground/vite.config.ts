@@ -1,28 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The build is embedded into the Rust binary (src/server.rs), so file names
-// must be fixed: ui/playground/{index.html, playground.js, playground.css}.
+// A static site: `npm run build` writes ../dist (index.html, JS, CSS and the
+// solver's worker). The solver runs in the browser, so any static host can
+// serve it, from any sub-path (relative URLs).
 export default defineConfig({
   plugins: [react()],
   base: "./",
   build: {
-    outDir: "../ui/playground",
+    outDir: "../dist",
     emptyOutDir: true,
-    cssCodeSplit: false,
     chunkSizeWarningLimit: 1500, // one bundle on purpose (three.js included)
-    rollupOptions: {
-      output: {
-        entryFileNames: "playground.js",
-        chunkFileNames: "playground-[name].js",
-        assetFileNames: "playground.[ext]",
-        inlineDynamicImports: true,
-      },
-    },
   },
+  worker: { format: "es" },
   server: {
-    // `npm run dev` talks to a running `cdcl serve`.
-    proxy: { "/api": "http://127.0.0.1:8080" },
-    fs: { allow: [".."] }, // the examples live in ../examples/smt
+    fs: { allow: [".."] }, // the examples (../examples/smt) and the solver (../solver)
   },
 });

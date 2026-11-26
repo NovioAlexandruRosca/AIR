@@ -1,4 +1,4 @@
 /target
 *.trace.json
-
-/playground/node_modules
+node_modules/
+/dist

@@ -1,26 +1,56 @@
-# CDCL(T) solver in Rust + DPLL(T) playground
+# CDCL(T) solver in TypeScript + DPLL(T) playground
 
 A Conflict-Driven Clause Learning solver: **DPLL + First-UIP clause learning + non-chronological backjumping**, with **MOMS** as the decision heuristic. It reads DIMACS CNF files (the SAT Competition format) and can record every step in a trace.
 
 The same solver is also the SAT engine of an **SMT solver (CDCL(T))** for **linear integer arithmetic (LIA)** and **algebraic datatypes (DT)**, combined with **Nelson–Oppen** and input **purification**. See [SMT: LIA + datatypes](#smt-lia--datatypes-cdclt). The **Playground** web page lets you make the decisions yourself, watch the propagation step by step, and see inside the theory solvers (Simplex, congruence closure, purification).
 
-No external crates: the solver, the JSON output and the small HTTP server for the UI use only `std`.
+Everything is TypeScript, and **the playground runs entirely in the browser**: the solver runs in a Web Worker inside the page, so the site is a folder of static files with no server behind it. The original Rust implementation is on the `rust` branch; this version is a line-by-line port of it and gives the same answers (see [Tests](#tests)).
 
-## Build and run
+## Run it
+
+You need [Node.js](https://nodejs.org/) 18 or newer.
 
 ```bash
-cargo build --release
+npm install
 ```
+
+installs everything (the solver in `solver/`, the page in `playground/`). Then:
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | The playground with live reloading: open the address it prints (<http://localhost:5173/>). |
+| `npm run build` | The static site, written to `dist/`. |
+| `npm run preview` | Serves `dist/` locally (<http://localhost:4173/>), to check the build. |
+| `npm test` | The solver's tests. |
+| `npm run solve -- <file>` | Solve a DIMACS or SMT-LIB file on the command line. |
+
+## Deploy (only a domain needed)
+
+`npm run build` writes `dist/`: `index.html` and an `assets/` folder (the page, its styles, and the solver's worker). It uses relative paths, so it works from the domain's root or from any sub-folder. Put the contents of `dist/` on any static host:
+
+- **The domain's own web space** (cPanel, FTP, …): upload the contents of `dist/` into `public_html/` (or a sub-folder).
+- **Netlify**: drag the `dist/` folder onto <https://app.netlify.com/drop>, then add the domain under *Domain settings*.
+- **GitHub Pages / Cloudflare Pages**: publish the `dist/` folder, then point the domain at it (a CNAME record).
+
+No server process, no database, nothing to keep running: the browser does all the solving. Any web server works as long as it sends `.js` files as JavaScript (all of them do).
+
+## Command line
 
 Solve a file (SAT Competition output; exit code 10 = SAT, 20 = UNSAT):
 
 ```bash
-printf 'p cnf 5 3\n1 -5 4 0\n-1 5 3 4 0\n-3 -4 0\n' | cargo run --release -- -
+npm run solve -- examples/smt/dpllt_intro.smt2
+```
+
+DIMACS works the same way; `-` reads standard input:
+
+```bash
+printf 'p cnf 5 3\n1 -5 4 0\n-1 5 3 4 0\n-3 -4 0\n' | npm run solve --silent -- -
 ```
 
 ```
 c parsed 5 variables, 3 clauses
-c decisions 3  propagations 0  conflicts 0  learned 0  max level 3
+c decisions 3  propagations 0  conflicts 0  learned 0  deleted 0  max level 3
 c model verified against all 3 clauses
 s SATISFIABLE
 v 1 -2 -3 4 -5 0
@@ -29,7 +59,7 @@ v 1 -2 -3 4 -5 0
 Write the step-by-step trace as JSON:
 
 ```bash
-cargo run --release -- examples/smt/dpllt_intro.smt2 --trace intro.trace.json
+npm run solve -- examples/smt/dpllt_intro.smt2 --trace intro.trace.json
 ```
 
 Options:
@@ -37,44 +67,38 @@ Options:
 | Option | Effect |
 |---|---|
 | `--trace-limit N` | Stop recording after N events (default 20 000). The solver still finishes, and the result is still recorded. |
-| `--timeout T` | Give up with `s UNKNOWN` after `T` (`30`, `30s`, `500ms`, `2m`, or `none`). `serve` defaults to 60 s per request. |
+| `--timeout T` | Give up with `s UNKNOWN` after `T` (`30`, `30s`, `500ms`, `2m`, or `none`). The playground uses 60 s per request. |
 | `--max-conflicts N` | Give up with `s UNKNOWN` after N conflicts. |
 | `--no-reduce` | Never delete learned clauses (see "Learned-clause deletion" below). |
-
-To stop a run early: press Ctrl+C in the terminal, or rely on `--timeout`.
-
-### The playground
-
-```bash
-cargo run --release -- serve
-```
-
-Then open <http://127.0.0.1:8080/>. See [Playground](#playground) below.
 
 ## Project layout
 
 ```
-src/lit.rs       literal encoding (2·var + sign)
-src/dimacs.rs    DIMACS parser with line-numbered errors and warnings
-src/solver.rs    CDCL: 2WL BCP, MOMS, First-UIP analysis, backjumping
-src/trace.rs     trace events and their JSON encoding
-src/lib.rs       solve_to_json(): the full run as JSON
-src/main.rs      CLI
-src/server.rs    std-only HTTP server for the playground (127.0.0.1 only, one thread per connection)
-src/smt/         CDCL(T): see "SMT: LIA + datatypes"
-  sexp.rs        s-expression reader
-  term.rs        hash-consed terms, sorts, symbol ownership, pretty printing, model values
-  parser.rs      SMT-LIB 2 subset (theory commands and symbols are delegated to theories)
-  theory.rs      the Theory trait, the only thing a new theory implements
-  lia.rs, rat.rs linear integer arithmetic: Simplex over exact rationals, branch and bound
-  dt.rs          algebraic datatypes: congruence closure with explanations
-  preprocess.rs  purification, shared constants, Tseitin CNF, atom registration
-  combine.rs     Nelson–Oppen combination, implemented as the SAT solver's TheoryHook
-  mod.rs         pipeline, model verification, JSON, playground replay
-playground/      the Playground page: React + TypeScript sources (Vite)
-ui/playground/   its build output, embedded into the binary
-examples/smt/    SMT-LIB examples (LIA, DT, combination), also the playground's example list
-tests/           end-to-end and trace-consistency tests (SAT and SMT)
+package.json        one place for the commands above
+solver/             the solver (TypeScript, no runtime dependencies)
+  src/lit.ts        literal encoding (2·var + sign)
+  src/dimacs.ts     DIMACS parser with line-numbered errors and warnings
+  src/solver.ts     CDCL: 2WL BCP, MOMS, First-UIP analysis, backjumping
+  src/trace.ts      trace events and their JSON encoding
+  src/lib.ts        solve_to_json(): the full run as JSON
+  src/api.ts        the two entry points the page calls ("solve", "playground")
+  src/worker.ts     the Web Worker that runs them in the browser
+  src/cli.ts        command line
+  src/smt/          CDCL(T): see "SMT: LIA + datatypes"
+    sexp.ts         s-expression reader
+    term.ts         hash-consed terms, sorts, symbol ownership, pretty printing, model values
+    parser.ts       SMT-LIB 2 subset (theory commands and symbols are delegated to theories)
+    theory.ts       the Theory class, the only thing a new theory implements
+    lia.ts, rat.ts  linear integer arithmetic: Simplex over exact rationals (bigint), branch and bound
+    dt.ts           algebraic datatypes: congruence closure with explanations
+    preprocess.ts   purification, shared constants, Tseitin CNF, atom registration
+    combine.ts      Nelson–Oppen combination, implemented as the SAT solver's TheoryHook
+    mod.ts          pipeline, model verification, JSON, playground replay
+  tests/            unit, end-to-end and trace-consistency tests, and the comparison with Rust
+  PORTING.md        how the Rust code maps to TypeScript
+playground/         the Playground page: React + TypeScript sources (Vite)
+examples/smt/       SMT-LIB examples (LIA, DT, combination), also the playground's example list
+dist/               the built site (after `npm run build`)
 ```
 
 ## Design decisions
@@ -124,7 +148,7 @@ Deleted clauses keep their id, with empty literals, so ids stay stable. **A reco
 
 The hard UNSAT files need over 100k conflicts with MOMS and no restarts. That's the heuristic's limit, not a bug. (The benchmark files are not part of the repository.)
 
-**UI technology.** A Rust binary with a built-in `std` HTTP server serves one page, written in React. WASM was the other option. It would need the `wasm32` target and `wasm-bindgen`/`wasm-pack`, and a second build step. With this design the browser never re-implements solver logic: it only turns the solver's trace into pictures.
+**UI technology.** The page is written in React. The solver was first written in Rust behind a small HTTP server (the `rust` branch); it was then ported line by line to TypeScript so that the whole thing is one static site: the solver runs in a Web Worker in the browser, so a long solve never freezes the page, and hosting needs no server. The page itself never re-implements solver logic: it only turns the solver's trace into pictures.
 
 ## Trace format
 
@@ -141,7 +165,7 @@ The hard UNSAT files need over 100k conflicts with MOMS and no restarts. That's 
 
 `timing` is wall-clock time in milliseconds:
 - `solve_ms` is the run that recorded the trace, so it includes the tracing cost.
-- `POST /api/solve` (in `serve` mode) solves the formula a second time without tracing. Its time goes in `solve_untraced_ms`, which is the solver's real speed. The solver is deterministic, so both runs take identical steps.
+- The playground's "solve" entry point (`solver/src/api.ts`) solves the formula a second time without tracing. Its time goes in `solve_untraced_ms`, which is the solver's real speed. The solver is deterministic, so both runs take identical steps.
 - `--trace` from the CLI only does the traced run, so `solve_untraced_ms` is `null` there.
 
 Literals are DIMACS integers, variables are 1-based, and clause ids are 0-based (`C1` = id 0; learned clauses continue after the originals).
@@ -231,7 +255,7 @@ The learned clause is **(¬x6 ∨ x5)**. Its other literal is from level 1, so t
 Any input whose first non-comment character is `(` (or any `.smt2` file) is treated as SMT-LIB 2:
 
 ```bash
-cargo run --release -- examples/smt/combo_sat.smt2
+npm run solve -- examples/smt/combo_sat.smt2
 ```
 
 ```
@@ -265,15 +289,15 @@ Not supported: uninterpreted functions, parametric datatypes, `push`/`pop`, `ite
 
 ```
 SMT-LIB text
-  └─ parser.rs ──► terms (hash-consed DAG; each function symbol and sort is owned by one theory)
-       └─ preprocess.rs
+  └─ parser.ts ──► terms (hash-consed DAG; each function symbol and sort is owned by one theory)
+       └─ preprocess.ts
             1. purification: alien subterms → fresh constants kᵢ, definitions kᵢ = t asserted
             2. shared constants (used by ≥ 2 theories) → interface equalities x = y for every pair
             3. Tseitin: Boolean structure → CNF; every theory atom is a Boolean variable
             4. registration: each atom is handed to its theory, which may add axioms
-       └─ solver.rs (unchanged CDCL) ── TheoryHook ──► combine.rs (Nelson–Oppen)
-                                                         ├── lia.rs
-                                                         └── dt.rs
+       └─ solver.ts (unchanged CDCL) ── TheoryHook ──► combine.ts (Nelson–Oppen)
+                                                         ├── lia.ts
+                                                         └── dt.ts
 ```
 
 The SAT solver only knows about a `TheoryHook`. After every round of unit propagation it asks the hook for a **partial check**. When every problem clause is satisfied, it asks for a **final check**. The hook answers with clauses only:
@@ -294,7 +318,7 @@ So conflict analysis, backjumping, the implication graph and the playground all 
 
 ### Adding a theory
 
-Implement `smt::theory::Theory` and add the theory to `smt::default_theories()`. Nothing else changes.
+Extend the `Theory` class (`solver/src/smt/theory.ts`) and add the theory to `default_theories()` in `solver/src/smt/mod.ts`. Nothing else changes.
 
 | Method | Purpose |
 |---|---|
@@ -345,7 +369,7 @@ Implement `smt::theory::Theory` and add the theory to `smt::default_theories()`.
 
 ### Playground
 
-<http://127.0.0.1:8080/> (after `cdcl serve`) is a teaching page written in **React** (TypeScript, Vite) with a light theme and large type. It follows the DPLL(T) presentation of Reynolds' VTSA 2017 lectures (slides 38–50) and opens on the slides' introduction example, `examples/smt/dpllt_intro.smt2`: `(x+1>0 ∨ x+y>0) ∧ (x<0 ∨ x+y>4) ∧ ¬(x+y>0)`. The slides' exercise `(x>y ∨ x>z) ∧ (x+1<y ∨ ¬x>y) ∧ (x>y ∨ z>y)` is the "Exercise" right below it. The example list has three groups: LIA, DT (opening with `dt_intro.smt2`) and LIA + DT. *Edit formula* takes any SMT-LIB or DIMACS text; *Write a formula* takes a formula as you would write it on paper, `(x + 1 > 0 or x + y > 0) and not (x + y > 0)` or `((x <= y) \/ (z < y)) /\ (x <= y)`, and shows the SMT-LIB it becomes (`src/formulaText.ts`: `and or not -> <->`, also `/\ \/ !`, `\and \or \not`, `∧ ∨ ¬`; `< <= > >= = !=`; sums and constant multiples; a compared name is an `Int`, a name used on its own a `Bool`; one assertion per line or top-level `and`).
+The playground (`npm run dev`, or the deployed `dist/`) is a teaching page written in **React** (TypeScript, Vite) with a light theme and large type. It follows the DPLL(T) presentation of Reynolds' VTSA 2017 lectures (slides 38–50) and opens on the slides' introduction example, `examples/smt/dpllt_intro.smt2`: `(x+1>0 ∨ x+y>0) ∧ (x<0 ∨ x+y>4) ∧ ¬(x+y>0)`. The slides' exercise `(x>y ∨ x>z) ∧ (x+1<y ∨ ¬x>y) ∧ (x>y ∨ z>y)` is the "Exercise" right below it. The example list has three groups: LIA, DT (opening with `dt_intro.smt2`) and LIA + DT. *Edit formula* takes any SMT-LIB or DIMACS text; *Write a formula* takes a formula as you would write it on paper, `(x + 1 > 0 or x + y > 0) and not (x + y > 0)` or `((x <= y) \/ (z < y)) /\ (x <= y)`, and shows the SMT-LIB it becomes (`src/formulaText.ts`: `and or not -> <->`, also `/\ \/ !`, `\and \or \not`, `∧ ∨ ¬`; `< <= > >= = !=`; sums and constant multiples; a compared name is an `Int`, a name used on its own a `Bool`; one assertion per line or top-level `and`).
 
 | Part | What it shows |
 |---|---|
@@ -392,15 +416,7 @@ The data comes from the solvers themselves: while tracing, LIA records each chec
 | LIA + DT: purification | Mixed literals such as `head(l) + 1 ≤ x`: click every alien subterm (a DT term inside arithmetic, or an arithmetic term inside a DT term, also nested ones). The page then shows the purified LIA and DT parts with fresh constants `v1, v2, …` and their definitions, and you pick the constants both parts share. |
 | LIA + DT: Nelson–Oppen | Which equalities between the shared constants LIA forces (checked by the solver), which DT then derives, and which theory finds the conflict, if any. |
 
-**Building the page.** The sources are in `playground/` (`src/model.ts` turns the solver's events into steps, `src/components/` holds the views, `src/theory/` the theory tabs, `src/edu/` the educational levels; the 3D view uses three.js). The examples are bundled from `examples/smt/`, and their order and names are listed in `src/api.ts`. `npm run build` type-checks and writes `ui/playground/{index.html, playground.js, playground.css}`, which the Rust binary embeds with `include_str!`, so `cargo build` needs no Node. Rebuild after changing the sources or the examples:
-
-```
-cd playground
-npm install
-npm run build
-```
-
-For live reloading, run `cdcl serve` and `npm run dev` side by side; Vite proxies `/api` to port 8080.
+**Building the page.** The sources are in `playground/` (`src/model.ts` turns the solver's events into steps, `src/components/` holds the views, `src/theory/` the theory tabs, `src/edu/` the educational levels; the 3D view uses three.js). The examples are bundled from `examples/smt/`, and their order and names are listed in `src/api.ts`. The page talks to the solver through `src/solverClient.ts`: two Web Workers running `solver/src/worker.ts`, which call the same two entry points the Rust server used to answer over HTTP (`solver/src/api.ts`), so the page receives exactly the same JSON. `npm run dev` reloads live; `npm run build` type-checks and writes the static site to `dist/`.
 
 ### SMT examples
 
@@ -433,9 +449,12 @@ For live reloading, run `cdcl serve` and `npm run dev` side by side; Vite proxie
 ## Tests
 
 ```bash
-cargo test
+npm test
 ```
 
+(`cd solver && npx vitest run tests/smt.test.ts` runs one file.)
+
+- **Same answers as Rust** (`tests/golden.test.ts`): 210 requests recorded from the Rust solver on the `rust` branch (`tests/golden/make.mjs`): every example solved, started, finished with and without theory propagation, and walked step by step through decisions and unit-clause choices; Boolean formulas, DIMACS files and error cases. The TypeScript solver must return the same JSON (only wall-clock timings may differ). One detail is compared as a set: the order of some entries in the DT snapshot's history, which the Rust solver itself writes in a different order from run to run. `npx tsx tests/golden/diff.ts "<case>"` shows where a case differs.
 - **Parser:** the task example, clauses spanning or sharing lines, SATLIB `%` terminator, empty clause, warnings, line-numbered errors.
 - **BCP:** reasons and levels along an implication chain; conflict detection.
 - **MOMS:** the score and the tie-break on a hand-computed example.
@@ -451,7 +470,7 @@ cargo test
 - **Clause deletion:** 400 random instances plus pigeonhole files are solved with deletion forced after only 4–20 learned clauses, and the answers still match brute force. A traced run never deletes.
 - **Limits:** the time limit, cancellation and the conflict limit each stop the solver with the right reason.
 
-- **SMT** (`tests/smt_tests.rs`):
+- **SMT** (`tests/smt.test.ts`):
   - LIA: Simplex conflicts, GCD, branch and bound, Boolean structure, non-convex disequalities;
   - DT: clash, acyclicity, constructor exclusion, finite sorts, selectors and models;
   - the combination: Nelson–Oppen equality exchange, purification of mixed terms, non-convex arrangement guessing, shared variables through datatypes;
@@ -459,6 +478,6 @@ cargo test
   - 250 random LIA problems with Boolean structure, checked against brute force.
 
   Every SMT trace is replayed by the same trace checker as SAT traces, including theory clauses and new variables. Every SAT model is verified against the original assertions.
-- **Solver hook** (unit tests in `solver.rs`): a toy theory that propagates and conflicts through `TheoryHook`, and the playground `replay`.
+- **Solver hook** (`tests/solver_unit.test.ts`): a toy theory that propagates and conflicts through `TheoryHook`, and the playground `replay`.
 
 Not yet tested on actual SAT Competition benchmark files. Timing used generated random 3-SAT with up to 250 variables and 1065 clauses.

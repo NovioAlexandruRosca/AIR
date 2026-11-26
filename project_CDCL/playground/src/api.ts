@@ -1,5 +1,8 @@
-// Types of the JSON returned by `POST /api/playground` (see src/smt/mod.rs)
-// and the request helper.
+// Types of the JSON the solver's playground entry point returns (see
+// solver/src/smt/mod.ts) and the request helpers. The solver runs in the
+// browser (solverClient.ts).
+
+import { call } from "./solverClient";
 
 export type Lit = number; // DIMACS literal: +v / -v, v is 1-based
 
@@ -145,10 +148,7 @@ export async function playground(req: Request): Promise<PlaygroundResponse> {
     `DECISIONS ${actionList(req.decisions, req.picks ?? []).join(" ")}\n` +
     `LEMMAS ${req.lemmas.map((c) => c.join(" ") + " 0").join(" ")}\n` +
     `OPTIONS ${opts}\n${req.src}`;
-  const res = await fetch("api/playground", { method: "POST", body, headers: { "Content-Type": "text/plain" } }).catch(() => {
-    throw new Error("The playground needs the local server: run `cdcl serve` and open http://127.0.0.1:8080/");
-  });
-  const data = (await res.json()) as PlaygroundResponse;
+  const data = JSON.parse(await call("playground", body)) as PlaygroundResponse;
   if (data.error) throw new Error(data.error);
   return data;
 }
@@ -187,12 +187,9 @@ export function loadExamples(): Example[] {
   return LIST.filter(([, f]) => byName.has(f)).map(([group, f, name]) => ({ group, name, text: byName.get(f)! }));
 }
 
-/** Solve SMT-LIB text (`POST /api/solve`): the status and, when sat, the model. */
+/** Solve SMT-LIB text: the status and, when sat, the model. */
 export async function solveSmt(src: string): Promise<{ status: string; model: { name: string; value: string }[] }> {
-  const res = await fetch("api/solve", { method: "POST", body: src, headers: { "Content-Type": "text/plain" } }).catch(() => {
-    throw new Error("The playground needs the local server: run `cdcl serve` and open http://127.0.0.1:8080/");
-  });
-  const data = await res.json();
+  const data = JSON.parse(await call("solve", src));
   if (data.error) throw new Error(data.error);
   return { status: data.status, model: data.smt?.model ?? [] };
 }
